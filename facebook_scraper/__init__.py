@@ -300,6 +300,7 @@ def get_posts_by_search(
     credentials: Optional[Credentials] = None,
     **kwargs,
 ) -> Iterator[Post]:
+
     """Get posts by searching all of Facebook
     Args:
         word (str): The word for searching posts.
@@ -516,18 +517,14 @@ def enable_logging(level=logging.DEBUG):
     logger.addHandler(handler)
     logger.setLevel(level)
 
-
 def use_persistent_session(email: str, password: str, cookies_file_path=DEFAULT_COOKIES_FILE_PATH):
     """Login persistently to Facebook and save cookies to a file (default: ".fb-cookies.pckl"). This is highly recommended if you want to scrape several times a day because it will keep your session alive instead of logging in every time (which can be flagged as suspicious by Facebook).
-
     Args:
         email (str): email address to login.
         password (str): password to login.
         cookies_file_path (str, optional): path to the file in which to save cookies. Defaults to ".fb-cookies.pckl".
-
     Raises:
         exceptions.InvalidCredentials: if the credentials are invalid.
-
     Returns:
         Boolean: True if the login was successful, False otherwise.
     """
@@ -551,8 +548,6 @@ def use_persistent_session(email: str, password: str, cookies_file_path=DEFAULT_
             pickle.dump(cookies, f)
         set_cookies(cookies)
         logger.debug("Successfully logged in with credentials")
-
-
 # Disable logging by default
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

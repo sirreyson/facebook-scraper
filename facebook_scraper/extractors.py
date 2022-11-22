@@ -274,10 +274,11 @@ class PostExtractor:
         has_more = self.more_url_regex.search(element.html)
         if has_more and self.full_post_html:
             element = self.full_post_html.find('.story_body_container', first=True)
+
             if not element and self.full_post_html.find("div.msg", first=True):
                 text = self.full_post_html.find("div.msg", first=True).text
                 return {"text": text, "post_text": text}
-
+                
         nodes = element.find('p, header, span[role=presentation]')
         if nodes and len(nodes) > 1:
             post_text = []
@@ -1092,7 +1093,7 @@ class PostExtractor:
                 reactions = self.extract_reactions(comment_id, force_parse_HTML=True)
                 if comment_reactors_opt != "generator":
                     reactions["reactors"] = utils.safe_consume(reactions.get("reactors", []))
-        else:
+            else:
             reactions_count = comment.find('span._14va', first=True)
             if reactions_count and len(reactions_count.text) > 0:
                 reactions_count = reactions_count.text

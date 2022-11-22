@@ -10,6 +10,7 @@ import demjson3 as demjson
 from urllib.parse import parse_qs, urlparse, unquote
 from datetime import datetime
 import os
+from randomheader import RandomHeader
 
 from requests import RequestException
 from requests_html import HTMLSession
@@ -48,12 +49,21 @@ class FacebookScraper:
     """Class for creating FacebookScraper Iterators"""
 
     base_url = FB_MOBILE_BASE_URL
+    
+    rh = RandomHeader()
+    default_headers = rh.header()
+    print(f"Browser used: {default_headers}")
+    
+    """ 
+    #Testing RandomHeader instead of a same header
     default_headers = {
         "Accept": "*/*",
         "Connection": "keep-alive",
         "Accept-Encoding": "gzip,deflate",
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/603.3.8 (KHTML, like Gecko) Version/10.1.2 Safari/603.3.8",
     }
+    """
+    
     have_checked_locale = False
 
     def __init__(self, session=None, requests_kwargs=None):
@@ -756,11 +766,14 @@ class FacebookScraper:
             result["about"] = no_word_breaks.text
         except:
             result["about"] = None
+    try:
+        url = members.find("a", first=True).attrs.get("href")
+        logger.debug(f"Requesting page from: {url}")
 
         try:
             url = members.find("a", first=True).attrs.get("href")
             logger.debug(f"Requesting page from: {url}")
-
+            
             resp = self.get(url).html
             url = resp.find("a[href*='listType=list_admin_moderator']", first=True)
             if kwargs.get("admins", True):
