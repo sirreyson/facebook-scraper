@@ -1094,7 +1094,7 @@ class PostExtractor:
                 if comment_reactors_opt != "generator":
                     reactions["reactors"] = utils.safe_consume(reactions.get("reactors", []))
             else:
-            reactions_count = comment.find('span._14va', first=True)
+                reactions_count = comment.find('span._14va', first=True)
             if reactions_count and len(reactions_count.text) > 0:
                 reactions_count = reactions_count.text
             else:

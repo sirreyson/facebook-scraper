@@ -729,101 +729,108 @@ class FacebookScraper:
 
         return result
 
-    def get_group_info(self, group, **kwargs) -> Profile:
-        self.set_user_agent(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/603.3.8 (KHTML, like Gecko) Version/10.1.2 Safari/603.3.8"
-        )
-        url = f'/groups/{group}'
-        logger.debug(f"Requesting page from: {url}")
-        resp = self.get(url).html
-        try:
-            url = resp.find("a[href*='?view=info']", first=True).attrs["href"]
-            url += "&sfd=1"  # Add parameter to get full "about"-text
-        except AttributeError:
-            raise exceptions.UnexpectedResponse("Unable to resolve view=info URL")
-        logger.debug(f"Requesting page from: {url}")
-        resp = self.get(url).html
+    def get_page_info(self, page, **kwargs) -> Profile:
         result = {}
-        result["id"] = re.search(r'/groups/(\d+)', url).group(1)
-        try:
-            result["name"] = resp.find("header h3", first=True).text
-            result["type"] = resp.find("header div", first=True).text
-            members = resp.find("div[data-testid='m_group_sections_members']", first=True)
-            result["members"] = utils.parse_int(members.text)
-        except AttributeError:
-            raise exceptions.UnexpectedResponse("Unable to get one of name, type, or members")
-
-        # Try to extract the group description
-        try:
-            # Directly tageting the weird generated class names is not optimal, but it's the best i could do.
-            about_div = resp.find("._52jc._55wr", first=True)
-
-            # Removing the <wbr>-tags that are converted to linebreaks by .text
-            from requests_html import HTML
-
-            no_word_breaks = HTML(html=about_div.html.replace("<wbr/>", ""))
-
-            result["about"] = no_word_breaks.text
-        except:
-            result["about"] = None
-    try:
-        url = members.find("a", first=True).attrs.get("href")
-        logger.debug(f"Requesting page from: {url}")
+        desc = None
 
         try:
-            url = members.find("a", first=True).attrs.get("href")
+            about_url = f'/{page}/about/'
+            logger.debug(f"Requesting page from: {about_url}")
+            resp = self.get(about_url)
+            result["name"] = resp.html.find("title", first=True).text.replace(" - About", "")
+            desc = resp.html.find("meta[name='description']", first=True)
+            result["about"] = resp.html.find(
+                '#pages_msite_body_contents,div.aboutme', first=True
+            ).text
+            cover_photo = resp.html.find("#msite-pages-header-contents i.coverPhoto", first=True)
+            if cover_photo:
+                match = re.search(r"url\('(.+)'\)", cover_photo.attrs["style"])
+                if match:
+                    result["cover_photo"] = utils.decode_css_url(match.groups()[0])
+            profile_photo = resp.html.find("#msite-pages-header-contents img", first=True)
+            if profile_photo:
+                result["profile_photo"] = profile_photo.attrs["src"]
+        except Exception as e:
+            logger.error(e)
+        try:
+            url = f'/{page}/'
             logger.debug(f"Requesting page from: {url}")
-            
-            resp = self.get(url).html
-            url = resp.find("a[href*='listType=list_admin_moderator']", first=True)
-            if kwargs.get("admins", True):
-                if url:
-                    url = url.attrs.get("href")
-                    logger.debug(f"Requesting page from: {url}")
+            resp = self.get(url)
+            result["id"] = re.search(r'pages/transparency/(\d+)', resp.html.html).group(1)
+            result["name"] = resp.html.find("title", first=True).text.replace(" - Home", "")
+            desc = resp.html.find("meta[name='description']", first=True)
+            ld_json = None
+            try:
+                ld_json = resp.html.find("script[type='application/ld+json']", first=True).text
+            except:
+                logger.error("No ld+json element")
+                url = f'/{page}/community'
+                logger.debug(f"Requesting page from: {url}")
+                try:
+                    community_resp = self.get(url)
                     try:
-                        respAdmins = self.get(url).html
+                        ld_json = community_resp.html.find(
+                            "script[type='application/ld+json']", first=True
+                        ).text
                     except:
-                        raise exceptions.UnexpectedResponse("Unable to get admin list")
-                else:
-                    respAdmins = resp
-                # Test if we are a member that can add new members
-                if re.match(
-                    "/groups/members/search",
-                    respAdmins.find(
-                        "div:nth-child(1)>div:nth-child(1) a:not(.touchable)", first=True
-                    ).attrs.get('href'),
-                ):
-                    admins = respAdmins.find("div:nth-of-type(2)>div.touchable a:not(.touchable)")
-                else:
-                    admins = respAdmins.find("div:first-child>div.touchable a:not(.touchable)")
-                result["admins"] = [
-                    {
-                        "name": e.text,
-                        "link": utils.filter_query_params(e.attrs["href"], blacklist=["refid"]),
-                    }
-                    for e in admins
-                ]
+                        logger.error("No ld+json element")
+                        likes_and_follows = community_resp.html.find(
+                            "#page_suggestions_on_liking+div", first=True
+                        ).text.split("\n")
+                        result["followers"] = utils.convert_numeric_abbr(likes_and_follows[2])
+                except:
+                    pass
+            if ld_json:
+                meta = demjson.decode(ld_json)
+                result.update(meta["author"])
+                result["type"] = result.pop("@type")
+                for interaction in meta.get("interactionStatistic", []):
+                    if interaction["interactionType"] == "http://schema.org/FollowAction":
+                        result["followers"] = interaction["userInteractionCount"]
+            try:
+                result["about"] = resp.html.find(
+                    '#pages_msite_body_contents>div>div:nth-child(2)', first=True
+                ).text
+            except Exception as e:
+                logger.error(e)
+                result = self.get_profile(page)
+            for elem in resp.html.find("div[data-sigil*='profile-intro-card-log']"):
+                text = elem.text.split("\n")[0]
+                if " Followers" in text:
+                    result["followers"] = utils.convert_numeric_abbr(
+                        text.replace(" Followers", "")
+                    )
+                if text.startswith("Price Range"):
+                    result["Price Range"] = text.split(" · ")[-1]
+                link = elem.find("a[href]", first=True)
+                if link:
+                    link = link.attrs["href"]
+                    if "active_ads" in link:
+                        result["active_ads_link"] = link
+                    if "maps.google.com" in link:
+                        result["map_link"] = parse_qs(urlparse(link).query).get("u")[0]
+                        result["address"] = text
+                    if link.startswith("tel:"):
+                        result["phone"] = link.replace("tel:", "")
+                    if link.startswith("mailto:"):
+                        result["email"] = link.replace("mailto:", "")
+            result["rating"] = resp.html.find("div[data-nt='FB:TEXT4']")[1].text
+        except Exception as e:
+            logger.error(e)
+        if desc:
+            logger.debug(desc.attrs["content"])
+            match = re.search(r'\..+?(\d[\d,.]+).+·', desc.attrs["content"])
+            if match:
+                result["likes"] = utils.parse_int(match.groups()[0])
+            bits = desc.attrs["content"].split("·")
+            if len(bits) == 3:
+                result["people_talking_about_this"] = utils.parse_int(bits[1])
+                result["checkins"] = utils.parse_int(bits[2])
+        if kwargs.get("reviews"):
+            result["reviews"] = self.get_page_reviews(page, **kwargs)
+            if kwargs.get("reviews") != "generator":
+                result["reviews"] = utils.safe_consume(result["reviews"])
 
-            url = resp.find("a[href*='listType=list_nonfriend_nonadmin']", first=True)
-            if kwargs.get("members", True):
-                if url:
-                    url = url.attrs["href"]
-                    members = []
-                    while url:
-                        logger.debug(f"Requesting page from: {url}")
-                        resp = self.get(url).html
-                        elems = resp.find("#root div.touchable a:not(.touchable)")
-                        members.extend([{"name": e.text, "link": e.attrs["href"]} for e in elems])
-                        more = re.search(r'"m_more_item",href:"([^"]+)', resp.text)
-                        if more:
-                            url = more.group(1)
-                        else:
-                            url = None
-                    result["other_members"] = [m for m in members if m not in result["admins"]]
-                else:
-                    logger.warning("No other members listed")
-        except exceptions.LoginRequired as e:
-            pass
         return result
 
     def get_shop(self, page, **kwargs) -> Iterator[Post]:
